@@ -1,0 +1,133 @@
+#include "assert.H"
+#include "exceptions.H"
+#include "console.H"
+#include "paging_low.H"
+#include "page_table.H"
+
+PageTable * PageTable::current_page_table = NULL;
+unsigned int PageTable::paging_enabled = 0;
+ContFramePool * PageTable::kernel_mem_pool = NULL;
+ContFramePool * PageTable::process_mem_pool = NULL;
+unsigned long PageTable::shared_size = 0;
+
+
+
+void PageTable::init_paging(ContFramePool * _kernel_mem_pool,
+                            ContFramePool * _process_mem_pool,
+                            const unsigned long _shared_size)
+{
+   kernel_mem_pool = _kernel_mem_pool;
+   process_mem_pool = _process_mem_pool;
+   shared_size = _shared_size;
+
+   debug_out_E9_msg_value("FINISHED INIT PAGING", 1);
+   Console::puts("Initialized Paging System\n");
+}
+
+PageTable::PageTable()
+{
+	
+	// Setting up the page directory
+	// Find some free memory (4K)
+	//debug_out_E9_msg_value("Result ",(unsigned long)(kernel_mem_pool->get_frames(1)));	
+	//debug_out_E9_msg_value("Result ",2);	
+
+	page_directory = (unsigned long*) (kernel_mem_pool->get_frames(1) * PAGE_SIZE);
+	
+	debug_out_E9_msg_value("After Getframe ", 0);	
+	
+	// Setting up the page table
+	// The page table comes right after the page directory
+	unsigned long *page_table = (unsigned long*)(kernel_mem_pool->get_frames(1) * PAGE_SIZE);
+
+	unsigned long address = 0;
+	unsigned int i;
+	
+	for (i = 0; i < 1024; i++){
+		page_table[i] = address | 3; //read & write (011)
+		address = address + PAGE_SIZE;
+	}	
+	
+	//FIRST PAGE_DIRECTORY IS POINTING TO THE PAGE TABLE THAT WE JUST CREATED
+	page_directory[0] = (unsigned long)page_table;
+
+	page_directory[0] = page_directory[0] | 3;
+	
+	// WE HAVEN'T SET UP PAGE TABLES FOR 1023 ENTRIES SO JUST MAKE THEM READ ONLY
+	for(i = 1; i < 1024; i++)
+		page_directory[i] = 0 | 2;
+	
+	
+   Console::puts("Constructed Page Table object\n");
+}
+
+
+void PageTable::load()
+{	 
+
+   // SET THE CURRENT PAGE TABLE
+   current_page_table = this;
+   write_cr3((unsigned long)page_directory);		
+   Console::puts("Loaded page table\n");
+}
+
+void PageTable::enable_paging()
+{   
+   paging_enabled = 1;
+   write_cr0(read_cr0() | 0x80000000);
+   Console::puts("Enabled paging\n");
+}
+
+void PageTable::handle_fault(REGS * _r)
+{
+  unsigned long fault_address = read_cr2();
+  
+  // [Pd][Pt][Offset]
+  // [10][10][ 12   ]
+  // GET PAGE DIRECTORY 
+  unsigned long pd = fault_address >> 22;
+
+  // Get PAGE TABLE
+  unsigned long pt = (fault_address >> 12) & 0x3ff;
+  
+  // CREATE A NEW FRAME
+  unsigned long new_frame = process_mem_pool->get_frames(1);
+
+  // STORE ADDR OF page directory
+  unsigned long * page_directory = (unsigned long *)read_cr3();
+
+  // CHECKS IF IT IS VALID or INVALID
+
+  // WHEN THERE IS NO INNER PAGE TABLE
+  if((page_directory[pd] & 1) == 0){
+
+	// CREATE A PAGE TABLE
+
+	unsigned long* page_table = (unsigned long*)(kernel_mem_pool->get_frames(1) * PAGE_SIZE);
+	
+	// INTIALIZE EVERY ENTRY AS INVALID
+	for (int i =0 ; i< 1024; i++){
+		page_table[i] = 0 | 2;
+	}
+ 
+    // MARK PAGE DIRECTORY * TABLE AS VALID
+	page_directory[pd] = (unsigned long)(page_table) | 3;
+	
+	page_table[pt] = (new_frame * PAGE_SIZE) | 3;
+
+  }
+  // WHEN THERE IS A PAGE TABLE
+  else{
+	
+	unsigned long * page_table = (unsigned long *)(page_directory[pd] & 0xfffff000);
+	
+	page_table[pt] = (new_frame*PAGE_SIZE) | 3;
+
+	page_directory[pd] = (unsigned long)page_table;
+	page_directory[pd] = page_directory[pd] | 3;		
+	
+  }
+ 
+  Console::puts("handled page fault\n");
+}
+

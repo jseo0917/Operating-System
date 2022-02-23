@@ -1,0 +1,20 @@
+========================================================================
+                       Bochs x86 Emulator 2.4.6
+             Build from CVS snapshot, on February 22, 2011
+                   Compiled at Nov 11 2011, 09:31:18
+========================================================================
+GRADING - Constructor ran without breaking the system.
+GRADING - It has at least 10 points for compiling and booting.
+GRADING - It succeded with small_pool tests.
+GRADING - It has at least 25 points out of 50.
+GRADING - small_pool and memory reference tests.
+GRADING - Submission has at least 35 points out of 50.
+Space_available:  32768
+addr1          :  838860800
+base           :  838860800
+addr1-base     :  0
+addr2          :  838905856
+GRADING - It reused released memory.
+GRADING - Grade is  at least 45 out of 50
+how_many_to_create is  100
+GRADING - Grade is  50 out of 50

@@ -1,0 +1,253 @@
+/*
+ File: ContFramePool.C
+
+ Author:
+ Date  :
+
+ */
+
+/*
+
+ Notice that the differences between the class ContFramePool and your P2-A
+ Manager are few:
+
+ (1) The constructor is different. For the Manager class, the constructor was
+     given a memory to store the array representing the state of the frames
+     being managed.
+     In ContFramePool, the constructor receives only information about which
+     frames are being managed, and if additional frames are being given to store
+     the array representing state.
+
+ (2) The release_frames is now static
+
+     When we releae a frame, we only know its frame number. At the time
+     of a frame's release, we don't know necessarily which pool it came
+     from. Therefore, the function "release_frame" is static, i.e.,
+     not associated with a particular frame pool.
+
+     This problem is related to the lack of a so-called "placement delete" in
+     C++. For a discussion of this see Stroustrup's FAQ:
+     http://www.stroustrup.com/bs_faq2.html#placement-delete
+
+*/
+
+/*--------------------------------------------------------------------------*/
+
+
+/*--------------------------------------------------------------------------*/
+/* DEFINES */
+/*--------------------------------------------------------------------------*/
+
+/* -- (none) -- */
+
+/*--------------------------------------------------------------------------*/
+/* INCLUDES */
+/*--------------------------------------------------------------------------*/
+
+
+#include "cont_frame_pool.H"
+#include "console.H"
+#include "utils.H"
+#include "assert.H"
+
+ContFramePool* ContFramePool::frame_ptr[5] ={NULL};
+int ContFramePool::index_ = 0;
+
+ContFramePool::ContFramePool(unsigned long _base_frame_no,
+                             unsigned long _n_frames,
+                             unsigned long _info_frame_no,
+                             unsigned long _n_info_frames)
+{	
+	// KERNEL POOL
+	if(_info_frame_no == 0){
+		
+		// GET THE ADDRESS OF FRAME 0		
+		ptr = (char*)(_base_frame_no * FRAME_SIZE); // 2048
+
+		// WE ARE USING first FRAME 0, 3 = ALLOCATED
+		ptr[0] = 1;
+		
+		// Make Rest of the frames free	
+		for(int i = 1; i < _n_frames; i++)
+			ptr[i] = 3;
+		
+	}
+	// PROCESS POOL MAKE ALL FRAMES FREE
+	else{
+		ptr = (char*)(_info_frame_no * FRAME_SIZE);
+
+		for (int i =0; i < _n_frames; i++)
+			ptr[i] = 3;		
+	}
+	
+	// THESE PARTS ARE FOR RELEASE FUNCTION (STATIC)
+	// Keeps all the objects that were created
+	if (frame_ptr[0] == NULL){
+		index_ = 0;
+		frame_ptr[0] = this;
+		index_++;
+	}
+	else{		
+		frame_ptr[index_] = this;
+		index_++;
+	}
+
+	offset = _base_frame_no;
+	n_frames = _n_frames;
+	info_frame_no = _info_frame_no;
+	n_info_frames = _n_info_frames;
+
+}
+
+unsigned long ContFramePool::get_frames(unsigned long _n_frames)
+{
+
+	int index = 0;
+	bool found = false;
+	int count = 0;
+	
+	
+	// WHEN IT REQUIRES TOO MUCH FRAMES
+	// RETURN FALSE
+	if (_n_frames > n_frames)
+			return 0;
+	
+	// FIND IF WE HAVE CONTIGUOUS FRAMES UP TO N
+	while(index < n_frames && count <= _n_frames){
+
+		// WHEN PTR AT INDEX IS NOT AVAILABLE
+		if((unsigned long)ptr[index] == 2 || (unsigned long)ptr[index] == 0 || (unsigned long)ptr[index] == 1){
+		    index++;
+		    count = 0;
+		}
+
+		// WHEN PTR IS FREE
+		else{
+		    count ++;
+		    //Console::puts("MEMORY TEST FAILED. ERROR IN FRAME POOL\n");Console::puti(count);
+		    if(count >= _n_frames){
+
+			found = true;
+			break;
+
+		    }// Found n frames, end while
+
+		    index++;
+		}
+
+	}// END WHILE
+
+	// WHEN THE FRAME IS FOUAD, SET THE FIRST FRAME AS HEAD_OF_SEQUENCE. REMAINING TO ALLOCATED UNTIL _N_FRAMES
+	if(found){
+
+		int head_of_seq = index - (count - 1);
+
+		ptr[head_of_seq] = 2;
+		//debug_out_E9_msg_value("Count", count);
+		
+		if (count == 1){
+			return (unsigned long)(head_of_seq + offset);
+		}
+
+		for (int i = head_of_seq + 1; i <= index; i++)
+			  ptr[i] = 1;
+
+		return (unsigned long)(head_of_seq + offset);
+
+	}
+	
+	// When we do not have enough frames	
+	else
+		return 0;
+
+	return 0;
+
+}
+
+void ContFramePool::mark_inaccessible(unsigned long _base_frame_no,
+                                      unsigned long _n_frames)
+{
+    // THIS PART IS SAME AS PART A
+    int i = 0;
+
+    _base_frame_no -= offset;
+
+    while(i < _n_frames){
+      ptr[_base_frame_no] = 0;
+      _base_frame_no++;
+      i++;
+    }
+
+    return;
+
+    
+}
+
+// STATIC => Keeps all the objects that were created.
+void ContFramePool::release_frames(unsigned long _first_frame_no){
+	
+	int i = 0;
+
+	// UNTIL I < 5 BECAUSE WE FIRST INITIALIZED THE ARRAY WITH 5 
+	while(i <= 5){
+		//frame_ptr[i]->offset + frame_ptr[i]->n_frames >= _first_frame_no){
+		//debug_out_E9_msg_value("base frame : ",frame_ptr[i]->offset);
+		//debug_out_E9_msg_value("n_frames   : ",frame_ptr[i]->n_frames + frame_ptr[i]->offset);
+		//debug_out_E9_msg_value("First_frame: ",_first_frame_no);
+		//debug_out_E9_msg_value("i          : ", i );
+		if((frame_ptr[i]->offset <= _first_frame_no)){
+			
+			if(_first_frame_no < (frame_ptr[i]->n_frames + frame_ptr[i]->offset)){
+						break;
+			}
+		}		
+		i++;
+
+		if(i > 5)
+			return;
+	}
+	
+	//ContFramePool::release_frames_part_A(i, _first_frame_no);
+
+	// PRINT OUT TO SEE IF THE RESULT IS TRUE. TRUE = RELEASED CORRECTLY OTHERWISE 0.
+	debug_out_E9_msg_value("Result ",ContFramePool::release_frames_part_A(i, _first_frame_no));
+	
+	return;
+}
+
+bool ContFramePool::release_frames_part_A(int i, unsigned long _first_frame_no)
+{		 
+    // SAME AS PART A
+    ContFramePool* area = frame_ptr[i];
+	
+    _first_frame_no = _first_frame_no - frame_ptr[i]->offset;
+
+    if((unsigned long)area->ptr[_first_frame_no] != 2){
+        return false;
+    }
+	
+    area->ptr[_first_frame_no] = 3;
+
+    _first_frame_no++;
+   
+    while((unsigned long)area->ptr[_first_frame_no] != 3 && (unsigned long)area->ptr[_first_frame_no] != 2 && (unsigned long)area->ptr[_first_frame_no] != 1){
+
+        // cout << "FRAME NUM: " << _first_frame_no << " STATE: " << (unsigned long)ptr[_first_frame_no] << endl;
+        if(_first_frame_no >= area->n_frames)
+                              break;
+
+        area->ptr[_first_frame_no] = 3;
+
+        _first_frame_no++;
+
+    }
+	
+    return true;
+	
+
+}
+
+unsigned long ContFramePool::needed_info_frames(unsigned long _n_frames)
+{
+    return _n_frames / (4096) + (_n_frames % (4096) > 0 ? 1 : 0);
+}
